@@ -15,7 +15,7 @@ const positionOptions = {
 	left: 'left',
 };
 
-export class UrlSettingsTab extends PluginSettingTab {
+export class SettingsTab extends PluginSettingTab {
 	plugin: BackgroundPlugin;
 
 	constructor(app: App, plugin: BackgroundPlugin) {
@@ -36,12 +36,23 @@ export class UrlSettingsTab extends PluginSettingTab {
 		instructions.createEl('p', {
 			text: 'The other settings, like opacity, bluriness, and input contrast, are helpers to tweak your experience.',
 		});
-		const issueLink = instructions.createEl('a', {
+
+		const extensions = instructions.createDiv();
+		extensions.createEl('strong', { text: 'Supported Image Formats: ' });
+		extensions.appendText(
+			'PNG, JPG/JPEG, GIF (including animated), WebP, and SVG.',
+		);
+		extensions.style.display = 'inline-block';
+		extensions.style.marginBottom = '10px';
+
+		const reportIssue = instructions.createEl('a', {
 			href: 'https://github.com/shmolf/obsidian-editor-background/issues',
 			text: 'Submit an issue',
 		});
-		issueLink.style.marginBottom = '12px'; // add some margin
+		reportIssue.style.display = 'inline-block';
+		reportIssue.style.marginBottom = '10px'; // add some margin
 
+		// setting for local images
 		new Setting(containerEl)
 			.setName('Use local image')
 			.setDesc('Use a local file path instead of a remote URL.')
@@ -55,6 +66,7 @@ export class UrlSettingsTab extends PluginSettingTab {
 					});
 			});
 
+		// render local path settings OR remote url settings
 		if (this.plugin.settings.useLocalImage) {
 			new Setting(containerEl)
 				.setName('Path to image')
@@ -67,29 +79,34 @@ export class UrlSettingsTab extends PluginSettingTab {
 						frag.appendText(')');
 					}),
 				)
-				.addText((text) =>
-					text
-						.setPlaceholder('path/to/background.png')
-						.setValue(this.plugin.settings.imagePath)
-						.onChange(async (value) => {
-							this.plugin.settings.imagePath = value;
-							await this.plugin.saveSettings();
-						}),
-				);
+				.addText((text) => {
+					text.setPlaceholder('path/to/background.png').setValue(
+						this.plugin.settings.imageLocation,
+					);
+					const inputEl = text.inputEl;
+
+					// Only update settings when user clicks off (to avoid cluttering with notices + performance)
+					inputEl.addEventListener('blur', async () => {
+						const value = text.getValue().trim();
+						this.plugin.settings.imageLocation = value;
+						await this.plugin.saveSettings();
+					});
+				});
 		} else {
 			new Setting(containerEl)
 				.setName('Background Image URL')
 				.setDesc('URL for the background image to load.')
-				.addText((text) =>
-					text
-						.setPlaceholder('https://example.com/image.png')
-						.setValue(this.plugin.settings.imagePath)
-						.onChange(async (value) => {
-							this.plugin.settings.imagePath = value;
+				.addText((text) => {
+					text.setPlaceholder('https://example.com/image.png');
+					text.setValue(this.plugin.settings.imageLocation);
 
-							await this.plugin.saveSettings();
-						}),
-				);
+					// Only update settings when user clicks off (to avoid cluttering with notices + performance)
+					text.inputEl.addEventListener('blur', async () => {
+						const value = text.getValue().trim();
+						this.plugin.settings.imageLocation = value;
+						await this.plugin.saveSettings();
+					});
+				});
 		}
 
 		new Setting(containerEl)

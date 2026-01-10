@@ -1,9 +1,11 @@
-import { Plugin, WorkspaceWindow, TFile, normalizePath } from 'obsidian';
-import { UrlSettingsTab } from './PluginSettingsTab';
+import { Plugin, WorkspaceWindow } from 'obsidian';
+import { SettingsTab } from './PluginSettingsTab';
+import { resolvePath, resolveURL, URLResult } from './Validation';
+import { Notice } from 'obsidian';
 
 interface PluginSettings {
-	useLocalImage: boolean;
-	imagePath: string;
+	useLocalImage: boolean; // whether to use local file (true) or remote URL
+	imageLocation: string; // path to file or URL
 	opacity: number;
 	bluriness: string;
 	inputContrast: boolean;
@@ -12,7 +14,7 @@ interface PluginSettings {
 
 export const DEFAULT_SETTINGS: Partial<PluginSettings> = {
 	useLocalImage: false,
-	imagePath: '',
+	imageLocation: '',
 	opacity: 0.3,
 	bluriness: 'low',
 	inputContrast: false,
@@ -25,7 +27,7 @@ export default class BackgroundPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		this.addSettingTab(new UrlSettingsTab(this.app, this));
+		this.addSettingTab(new SettingsTab(this.app, this));
 		this.app.workspace.onLayoutReady(() => this.UpdateBackground(document));
 		this.app.workspace.on('window-open', (win: WorkspaceWindow) =>
 			this.UpdateBackground(win.doc),
@@ -42,36 +44,35 @@ export default class BackgroundPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
-		this.UpdateBackground();
+		void this.UpdateBackground();
 	}
 
-	private resolveURL() {
-		// https://picsum.photos/id/997/1920/1080.jpg for testing
-		if (!this.settings.useLocalImage) {
-			console.log(this.settings.imagePath);
-			return this.settings.imagePath?.trim() || null;
+	private async resolveImage(): Promise<URLResult> {
+		if (!this.settings.imageLocation) {
+			return { imageURL: null, error: 'Path is empty' };
 		}
 
-		const filePath = normalizePath(this.settings.imagePath?.trim() || '');
-		if (!filePath) {
-			// can't find file
-			return null;
+		if (this.settings.useLocalImage) {
+			return resolvePath(this.settings.imageLocation);
 		}
-		console.log(filePath);
-
-		const af = this.app.vault.getAbstractFileByPath(filePath);
-		if (!(af instanceof TFile)) {
-			return null;
-		}
-		return this.app.vault.getResourcePath(af);
+		return await resolveURL(this.settings.imageLocation);
 	}
 
-	UpdateBackground(doc: Document = activeDocument) {
-		const imageURL = this.resolveURL();
+	// render notice if error
+	private lastNoticeError: string | null = null;
+	private maybeNotice(error: string | null) {
+		if (error && error !== this.lastNoticeError) {
+			new Notice(`Obsidian Background Image: ${error}`);
+		}
+		this.lastNoticeError = error;
+	}
 
+	async UpdateBackground(doc: Document = activeDocument) {
+		const { imageURL: url, error } = await this.resolveImage();
+		this.maybeNotice(error);
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-image',
-			`url('${imageURL}')`,
+			`url("${url}")`,
 		);
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-opacity',
