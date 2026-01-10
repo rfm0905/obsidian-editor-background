@@ -73,6 +73,7 @@ export class UrlSettingsTab extends PluginSettingTab {
 						.setValue(this.plugin.settings.imagePath)
 						.onChange(async (value) => {
 							this.plugin.settings.imagePath = value;
+							await this.plugin.saveSettings();
 						}),
 				);
 		} else {

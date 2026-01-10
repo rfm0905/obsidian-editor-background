@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceWindow } from 'obsidian';
+import { Plugin, WorkspaceWindow, TFile, normalizePath } from 'obsidian';
 import { UrlSettingsTab } from './PluginSettingsTab';
 
 interface PluginSettings {
@@ -45,10 +45,33 @@ export default class BackgroundPlugin extends Plugin {
 		this.UpdateBackground();
 	}
 
+	private resolveURL() {
+		// https://picsum.photos/id/997/1920/1080.jpg for testing
+		if (!this.settings.useLocalImage) {
+			console.log(this.settings.imagePath);
+			return this.settings.imagePath?.trim() || null;
+		}
+
+		const filePath = normalizePath(this.settings.imagePath?.trim() || '');
+		if (!filePath) {
+			// can't find file
+			return null;
+		}
+		console.log(filePath);
+
+		const af = this.app.vault.getAbstractFileByPath(filePath);
+		if (!(af instanceof TFile)) {
+			return null;
+		}
+		return this.app.vault.getResourcePath(af);
+	}
+
 	UpdateBackground(doc: Document = activeDocument) {
+		const imageURL = this.resolveURL();
+
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-image',
-			`url('${this.settings.imagePath}')`,
+			`url('${imageURL}')`,
 		);
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-opacity',
