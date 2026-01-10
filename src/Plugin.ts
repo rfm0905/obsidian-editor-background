@@ -2,7 +2,8 @@ import { Plugin, WorkspaceWindow } from 'obsidian';
 import { UrlSettingsTab } from './PluginSettingsTab';
 
 interface PluginSettings {
-	imageUrl: string;
+	useLocalImage: boolean;
+	imagePath: string;
 	opacity: number;
 	bluriness: string;
 	inputContrast: boolean;
@@ -10,7 +11,8 @@ interface PluginSettings {
 }
 
 export const DEFAULT_SETTINGS: Partial<PluginSettings> = {
-	imageUrl: 'protocol://domain.tld/path/to/image.png',
+	useLocalImage: false,
+	imagePath: '',
 	opacity: 0.3,
 	bluriness: 'low',
 	inputContrast: false,
@@ -46,7 +48,7 @@ export default class BackgroundPlugin extends Plugin {
 	UpdateBackground(doc: Document = activeDocument) {
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-image',
-			`url('${this.settings.imageUrl}')`,
+			`url('${this.settings.imagePath}')`,
 		);
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-opacity',
