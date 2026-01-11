@@ -1,37 +1,68 @@
-import { normalizePath, TFile } from 'obsidian';
-import { requestUrl } from 'obsidian';
+import { normalizePath, requestUrl } from 'obsidian';
 
 // What Electron Supports
 export const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
 
 // Result sum type for validation
 export type URLResult = {
-	imageURL: string | null;
+	location: string | null;
 	error: string | null;
 };
-const ok = (url: string): URLResult => ({ imageURL: url, error: null });
-const err = (error: string): URLResult => ({ imageURL: null, error });
 
-export const resolvePath = (path: string): URLResult => {
+const OK = (loc: string): URLResult => ({ location: loc, error: null });
+const ERR = (message: string): URLResult => ({
+	location: null,
+	error: message,
+});
+
+export const resolvePath = async (path: string): Promise<URLResult> => {
 	const filePath = normalizePath(path.trim() || '');
-	const file = app.vault.getAbstractFileByPath(filePath);
-	if (!(file instanceof TFile)) {
-		return err(`${filePath} not found in vault`);
-	}
-	const ext = file.extension.toLowerCase();
+
+	// check extension
+	const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
 	if (!IMAGE_EXT.has(ext)) {
-		// get list of extensions as string
 		const supported = Array.from(IMAGE_EXT)
 			.map((e) => `.${e}`)
 			.join(', ');
 
-		return err(
+		return ERR(
 			`Unsupported image type .${ext}\n Supported types ${supported}`,
 		);
 	}
-	const rp = app.vault.getResourcePath(file);
 
-	return ok(rp);
+	let MIMEType: string;
+	switch (ext) {
+		case 'png':
+			MIMEType = 'image/png';
+			break;
+		case 'jpg':
+		case 'jpeg':
+			MIMEType = 'image/jpeg';
+			break;
+		case 'gif':
+			MIMEType = 'image/gif';
+			break;
+		case 'webp':
+			MIMEType = 'image/webp';
+			break;
+		case 'svg':
+			MIMEType = 'image/svg+xml';
+			break;
+		default:
+			MIMEType = 'application/octet-stream';
+	}
+
+	try {
+		const data = await app.vault.adapter.readBinary(filePath);
+		const blob = new Blob([data], { type: MIMEType });
+		const url = URL.createObjectURL(blob);
+
+		return OK(url);
+	} catch (e) {
+		return ERR(
+			`Failed to read file: ${filePath} (${e?.message ?? String(e)})`,
+		);
+	}
 };
 
 // Validate and read remote file
@@ -39,7 +70,7 @@ export const resolveURL = async (link: string): Promise<URLResult> => {
 	try {
 		new URL(link);
 	} catch {
-		return err(`Invalid URL ${link}`);
+		return ERR(`Invalid URL ${link}`);
 	}
 
 	let response;
@@ -50,19 +81,18 @@ export const resolveURL = async (link: string): Promise<URLResult> => {
 			headers: { Range: 'bytes=0-2047' },
 		});
 	} catch (e) {
-		return err(`Failed to fetch URL: ${e?.message ?? String(e)}`);
+		return ERR(`Failed to fetch URL: ${e?.message ?? String(e)}`);
 	}
 
-	const contentType = (response.headers?.['content-type'] ??
-		response.headers?.['Content-Type'] ??
-		'') as string;
+	// get MIME content type
+	const contentType =
+		response.headers?.['content-type'] ??
+		response.headers?.['Content-Type'];
 
-	if (!contentType.toLowerCase().startsWith('image/')) {
-		return {
-			imageURL: null,
-			error: `URL does not return image (Content-Type: ${contentType || 'unknown'}).`,
-		};
+	// validate image content-type
+	if (!contentType || !contentType.toLowerCase().startsWith('image/')) {
+		return ERR(`URL is not an Image (Content-Type: ${contentType ?? 'unknown'})`)
 	}
 
-	return ok(link);
+	return OK(link);
 };

@@ -27,3 +27,6 @@ data.json
 # environment
 .env
 .env.local
+
+# TODO
+todo.txt

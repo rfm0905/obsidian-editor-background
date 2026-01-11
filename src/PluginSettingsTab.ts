@@ -58,16 +58,16 @@ export class SettingsTab extends PluginSettingTab {
 			.setDesc('Use a local file path instead of a remote URL.')
 			.addToggle((toggle) => {
 				toggle
-					.setValue(this.plugin.settings.useLocalImage)
+					.setValue(this.plugin.settings.useLocal)
 					.onChange(async (value) => {
-						this.plugin.settings.useLocalImage = value;
+						this.plugin.settings.useLocal = value;
 						await this.plugin.saveSettings();
 						this.display();
 					});
 			});
 
 		// render local path settings OR remote url settings
-		if (this.plugin.settings.useLocalImage) {
+		if (this.plugin.settings.useLocal) {
 			new Setting(containerEl)
 				.setName('Path to image')
 				.setDesc(
@@ -114,19 +114,18 @@ export class SettingsTab extends PluginSettingTab {
 			.setDesc(
 				'Opacity of the background image should be between 0% and 100%.',
 			)
-			.addText((text) =>
-				text
-					.setPlaceholder(`${(DEFAULT_SETTINGS.opacity || 1) * 100}`)
-					.setValue(
-						`${this.floatToPercent(this.plugin.settings.opacity)}`,
-					)
-					.onChange(async (value) => {
-						this.plugin.settings.opacity = this.percentToFloat(
-							Number(value),
-						);
-						await this.plugin.saveSettings();
-					}),
-			);
+			.addText((text) => {
+				text.setPlaceholder(
+					`${(DEFAULT_SETTINGS.opacity ?? 1) * 100}`,
+				).setValue(
+					`${this.floatToPercent(this.plugin.settings.opacity)}`,
+				);
+				text.inputEl.addEventListener('blur', async () => {
+					const float = this.percentToFloat(Number(text.getValue()));
+					this.plugin.settings.opacity = float;
+					await this.plugin.saveSettings();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName('Image Bluriness')

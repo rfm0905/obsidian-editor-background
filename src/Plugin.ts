@@ -1,10 +1,14 @@
 import { Plugin, WorkspaceWindow } from 'obsidian';
 import { SettingsTab } from './PluginSettingsTab';
-import { resolvePath, resolveURL, URLResult } from './Validation';
+import {
+	resolvePath as resolveLocal,
+	resolveURL as resolveRemote,
+	URLResult,
+} from './Validation';
 import { Notice } from 'obsidian';
 
 interface PluginSettings {
-	useLocalImage: boolean; // whether to use local file (true) or remote URL
+	useLocal: boolean; // whether to use local file (true) or remote URL
 	imageLocation: string; // path to file or URL
 	opacity: number;
 	bluriness: string;
@@ -13,7 +17,7 @@ interface PluginSettings {
 }
 
 export const DEFAULT_SETTINGS: Partial<PluginSettings> = {
-	useLocalImage: false,
+	useLocal: false,
 	imageLocation: '',
 	opacity: 0.3,
 	bluriness: 'low',
@@ -23,6 +27,9 @@ export const DEFAULT_SETTINGS: Partial<PluginSettings> = {
 
 export default class BackgroundPlugin extends Plugin {
 	settings: PluginSettings;
+
+	private prevBlobURL: string | null = null; // to avoid memory leaks
+	private prevError: string | null = null; // to avoid rerendering same notice
 
 	async onload() {
 		await this.loadSettings();
@@ -47,28 +54,54 @@ export default class BackgroundPlugin extends Plugin {
 		void this.UpdateBackground();
 	}
 
-	private async resolveImage(): Promise<URLResult> {
-		if (!this.settings.imageLocation) {
-			return { imageURL: null, error: 'Path is empty' };
+	async onunload() {
+		// clear up blob to avoid memory leaks
+		if (this.prevBlobURL) {
+			URL.revokeObjectURL(this.prevBlobURL);
+			this.prevBlobURL = null;
 		}
 
-		if (this.settings.useLocalImage) {
-			return resolvePath(this.settings.imageLocation);
-		}
-		return await resolveURL(this.settings.imageLocation);
+		const doc = document;
+		doc.body.style.removeProperty('--obsidian-editor-background-image');
+		doc.body.style.removeProperty('--obsidian-editor-background-opacity');
+		doc.body.style.removeProperty('--obsidian-editor-background-blur');
+		doc.body.style.removeProperty(
+			'--obsidian-editor-background-input-contrast',
+		);
+		doc.body.style.removeProperty(
+			'--obsidian-editor-background-line-padding',
+		);
+		doc.body.style.removeProperty('--obsidian-editor-background-position');
 	}
 
-	// render notice if error
-	private lastNoticeError: string | null = null;
+	private async resolveImage(): Promise<URLResult> {
+		const loc = (this.settings.imageLocation ?? '').trim();
+		if (!loc) {
+			return { location: null, error: 'Background location is empty' };
+		}
+
+		if (this.settings.useLocal) {
+			// local image
+			return await resolveLocal(loc);
+		}
+		return await resolveRemote(loc); // remote URL
+	}
+
 	private maybeNotice(error: string | null) {
-		if (error && error !== this.lastNoticeError) {
+		if (error && error !== this.prevError) {
 			new Notice(`Obsidian Background Image: ${error}`);
 		}
-		this.lastNoticeError = error;
+		this.prevError = error;
 	}
 
 	async UpdateBackground(doc: Document = activeDocument) {
-		const { imageURL: url, error } = await this.resolveImage();
+		const { location: url, error } = await this.resolveImage();
+
+		if (this.prevBlobURL && this.prevBlobURL !== url) {
+			URL.revokeObjectURL(this.prevBlobURL);
+			this.prevBlobURL = null;
+		}
+
 		this.maybeNotice(error);
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-image',
