@@ -1,10 +1,6 @@
 import { Plugin, WorkspaceWindow } from 'obsidian';
 import { SettingsTab } from './PluginSettingsTab';
-import {
-	resolvePath as resolveLocal,
-	resolveURL as resolveRemote,
-	URLResult,
-} from './Validation';
+import { resolveLocal, resolveRemote, URLResult } from './Validation';
 import { Notice } from 'obsidian';
 
 interface PluginSettings {
@@ -28,16 +24,16 @@ export const DEFAULT_SETTINGS: Partial<PluginSettings> = {
 export default class BackgroundPlugin extends Plugin {
 	settings: PluginSettings;
 
-	private prevBlobURL: string | null = null; // to avoid memory leaks
-	private prevError: string | null = null; // to avoid rerendering same notice
-
 	async onload() {
 		await this.loadSettings();
 
 		this.addSettingTab(new SettingsTab(this.app, this));
-		this.app.workspace.onLayoutReady(() => this.UpdateBackground(document));
-		this.app.workspace.on('window-open', (win: WorkspaceWindow) =>
-			this.UpdateBackground(win.doc),
+		this.app.workspace.onLayoutReady(() => this.updateBackground(document));
+		this.registerEvent(
+			this.app.workspace.on(
+				'window-open',
+				(win: WorkspaceWindow) => void this.updateBackground(win.doc),
+			),
 		);
 	}
 
@@ -51,20 +47,20 @@ export default class BackgroundPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
-		void this.UpdateBackground();
+		void this.updateBackground();
 	}
 
-	async onunload() {
+	onunload() {
 		// clear up blob to avoid memory leaks
-		if (this.prevBlobURL) {
-			URL.revokeObjectURL(this.prevBlobURL);
-			this.prevBlobURL = null;
+		const prevLoc = this.prevResult?.location ?? null;
+		if (this.isBlob(prevLoc)) {
+			URL.revokeObjectURL(prevLoc);
 		}
 
 		const doc = document;
 		doc.body.style.removeProperty('--obsidian-editor-background-image');
 		doc.body.style.removeProperty('--obsidian-editor-background-opacity');
-		doc.body.style.removeProperty('--obsidian-editor-background-blur');
+		doc.body.style.removeProperty('--obsidian-editor-background-bluriness');
 		doc.body.style.removeProperty(
 			'--obsidian-editor-background-input-contrast',
 		);
@@ -72,6 +68,24 @@ export default class BackgroundPlugin extends Plugin {
 			'--obsidian-editor-background-line-padding',
 		);
 		doc.body.style.removeProperty('--obsidian-editor-background-position');
+	}
+
+	private prevResult: URLResult | null = null;
+	private isBlob = (loc: string | null): loc is string =>
+		typeof loc === 'string' && loc.startsWith('blob:');
+
+	private sendNotice(result: URLResult) {
+		const errorChanged = result.error !== (this.prevResult?.error ?? null);
+		const locChanged =
+			result.location !== (this.prevResult?.location ?? null);
+
+		if (result.location && locChanged) {
+			new Notice(
+				`Obsidian Background Image: Loaded background ${this.settings.imageLocation.trim()}`,
+			);
+		} else if (result.error && (errorChanged || locChanged)) {
+			new Notice(`Obsidian Background Image: ${result.error}`);
+		}
 	}
 
 	private async resolveImage(): Promise<URLResult> {
@@ -82,30 +96,33 @@ export default class BackgroundPlugin extends Plugin {
 
 		if (this.settings.useLocal) {
 			// local image
-			return await resolveLocal(loc);
+			return resolveLocal(this.app, loc);
 		}
-		return await resolveRemote(loc); // remote URL
+		return resolveRemote(loc); // remote URL
 	}
 
-	private maybeNotice(error: string | null) {
-		if (error && error !== this.prevError) {
-			new Notice(`Obsidian Background Image: ${error}`);
-		}
-		this.prevError = error;
-	}
+	async updateBackground(doc: Document = activeDocument) {
+		const result = await this.resolveImage();
 
-	async UpdateBackground(doc: Document = activeDocument) {
-		const { location: url, error } = await this.resolveImage();
-
-		if (this.prevBlobURL && this.prevBlobURL !== url) {
-			URL.revokeObjectURL(this.prevBlobURL);
-			this.prevBlobURL = null;
+		const prevLoc = this.prevResult?.location ?? null;
+		const nextLoc = result.location;
+		if (this.isBlob(prevLoc) && prevLoc !== nextLoc) {
+			URL.revokeObjectURL(prevLoc);
 		}
 
-		this.maybeNotice(error);
+		this.sendNotice(result);
+		this.prevResult = result;
+		if (result.error) {
+			doc.body.style.setProperty(
+				'--obsidian-editor-background-image',
+				'none',
+			);
+			return;
+		}
+
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-image',
-			`url("${url}")`,
+			`url("${result.location}")`,
 		);
 		doc.body.style.setProperty(
 			'--obsidian-editor-background-opacity',

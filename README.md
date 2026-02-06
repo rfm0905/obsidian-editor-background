@@ -9,7 +9,7 @@ I use animated gifs as my background, particularly ones by [waneella](https://wa
 
 ## Settings Menu
 
-![Settings](screenshots/SettingsMenu.jpg)
+![Settings](screenshots/SettingsMenu.png)
 
 ## Example 1
 

@@ -1,13 +1,12 @@
-import { normalizePath, requestUrl } from 'obsidian';
+import { App, normalizePath, requestUrl } from 'obsidian';
 
 // What Electron Supports
 export const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
 
 // Result sum type for validation
-export type URLResult = {
-	location: string | null;
-	error: string | null;
-};
+export type URLResult =
+	| { location: string; error: null }
+	| { location: null; error: string };
 
 const OK = (loc: string): URLResult => ({ location: loc, error: null });
 const ERR = (message: string): URLResult => ({
@@ -15,8 +14,17 @@ const ERR = (message: string): URLResult => ({
 	error: message,
 });
 
-export const resolvePath = async (path: string): Promise<URLResult> => {
-	const filePath = normalizePath(path.trim() || '');
+export const resolveLocal = async (
+	app: App,
+	path: string,
+): Promise<URLResult> => {
+	const filePath = normalizePath(path.trim() ?? '');
+
+	// check if file exists
+	const exists = await app.vault.adapter.exists(filePath);
+	if (!exists) {
+		return ERR(`${filePath} not found in vault `);
+	}
 
 	// check extension
 	const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
@@ -26,32 +34,21 @@ export const resolvePath = async (path: string): Promise<URLResult> => {
 			.join(', ');
 
 		return ERR(
-			`Unsupported image type .${ext}\n Supported types ${supported}`,
+			`Unsupported file type "${ext}"\nSupported types ${supported}`,
 		);
 	}
 
-	let MIMEType: string;
-	switch (ext) {
-		case 'png':
-			MIMEType = 'image/png';
-			break;
-		case 'jpg':
-		case 'jpeg':
-			MIMEType = 'image/jpeg';
-			break;
-		case 'gif':
-			MIMEType = 'image/gif';
-			break;
-		case 'webp':
-			MIMEType = 'image/webp';
-			break;
-		case 'svg':
-			MIMEType = 'image/svg+xml';
-			break;
-		default:
-			MIMEType = 'application/octet-stream';
-	}
+	const MIME_TYPES: Record<string, string> = {
+		png: 'image/png',
+		jpg: 'image/jpg',
+		jpeg: 'image/jpeg',
+		gif: 'image/gif',
+		webp: 'image/webp',
+		svg: 'image/svg+xml',
+	};
+	const MIMEType = MIME_TYPES[ext] ?? 'application/octet-streat';
 
+	// read file as blob
 	try {
 		const data = await app.vault.adapter.readBinary(filePath);
 		const blob = new Blob([data], { type: MIMEType });
@@ -60,39 +57,41 @@ export const resolvePath = async (path: string): Promise<URLResult> => {
 		return OK(url);
 	} catch (e) {
 		return ERR(
-			`Failed to read file: ${filePath} (${e?.message ?? String(e)})`,
+			`Failed to read file ${filePath} (${e?.message ?? String(e)})`,
 		);
 	}
 };
 
 // Validate and read remote file
-export const resolveURL = async (link: string): Promise<URLResult> => {
+export const resolveRemote = async (link: string): Promise<URLResult> => {
+	const url = (link ?? '').trim();
 	try {
-		new URL(link);
+		new URL(url);
 	} catch {
-		return ERR(`Invalid URL ${link}`);
+		return ERR(`Invalid URL ${url}`);
 	}
 
 	let response;
 	try {
 		response = await requestUrl({
-			url: link,
+			url,
 			method: 'GET',
 			headers: { Range: 'bytes=0-2047' },
 		});
 	} catch (e) {
-		return ERR(`Failed to fetch URL: ${e?.message ?? String(e)}`);
+		return ERR(`Failed to fetch URL ${url} (${e?.message ?? String(e)})`);
 	}
 
 	// get MIME content type
-	const contentType =
-		response.headers?.['content-type'] ??
-		response.headers?.['Content-Type'];
+	const headers = response.headers ?? {};
+	const contentType = headers?.['content-type'] ?? headers?.['Content-Type'];
 
 	// validate image content-type
 	if (!contentType || !contentType.toLowerCase().startsWith('image/')) {
-		return ERR(`URL is not an Image (Content-Type: ${contentType ?? 'unknown'})`)
+		return ERR(
+			`URL is not an Image (Content-Type: ${contentType ?? 'unknown'})`,
+		);
 	}
 
-	return OK(link);
+	return OK(url);
 };

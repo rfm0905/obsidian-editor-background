@@ -40,16 +40,16 @@ export class SettingsTab extends PluginSettingTab {
 		const extensions = instructions.createDiv();
 		extensions.createEl('strong', { text: 'Supported Image Formats: ' });
 		extensions.appendText(
-			'PNG, JPG/JPEG, GIF (including animated), WebP, and SVG.',
+			'PNG, JPG/JPEG, GIF (including animated), WebP, and SVG. ',
 		);
-		extensions.style.display = 'inline-block';
-		extensions.style.marginBottom = '10px';
+		// extensions.style.marginBottom = '10px';
 
 		const reportIssue = instructions.createEl('a', {
 			href: 'https://github.com/shmolf/obsidian-editor-background/issues',
 			text: 'Submit an issue',
 		});
-		reportIssue.style.display = 'inline-block';
+		reportIssue.style.display = 'block';
+		reportIssue.style.marginTop = '5px';
 		reportIssue.style.marginBottom = '10px'; // add some margin
 
 		// setting for local images
